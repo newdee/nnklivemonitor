@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Button, Input, Form, FloatButton, Table, Tag, Flex, Divider } from "antd";
+import { Button, Input, Form, FloatButton, Table, Tag, Flex } from "antd";
 import { ReloadOutlined } from "@ant-design/icons";
 import "./App.css";
 
@@ -20,7 +20,8 @@ function App() {
   const [analysisId, setAnalysisId] = useState(-1);
   const [currentUser, setCurrentUser] = useState<LiveUser | null>(null);
   const [newWindow, setNewWindow] = useState<WindowProxy | null>(null);
-  const [waitPageTime, setWaitPageTime] = useState<number>(2000);
+  const waitPageTime = 5000;
+  //const [waitPageTime, setWaitPageTime] = useState<number>(5000);
 
   async function addLiveUser() {
     // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -51,7 +52,6 @@ function App() {
       newWindow.location.href = url;
     }
 
-    setTimeout(() => { console.log("waiting for loading") }, waitPageTime);
 
   };
 
@@ -60,7 +60,8 @@ function App() {
     const analysisHandle = async () => {
       if (monitorOptions === "停止监控" && currentUser) {
         handleOpenNewWindow(currentUser.url);
-        setAnalysisId(await invoke("analysis", {}));
+        setTimeout(async () => { setAnalysisId(await invoke("analysis", {})); }, waitPageTime);
+        //setAnalysisId(await invoke("analysis", {}));
       }
     }
     analysisHandle();
@@ -73,6 +74,9 @@ function App() {
       await getCurrentInfo();
       setMonitorOptions("停止监控");
     } else if (monitorOptions == "停止监控") {
+      if (newWindow) {
+        newWindow.close();
+      }
       setMonitorOptions("开始监控");
     }
   }

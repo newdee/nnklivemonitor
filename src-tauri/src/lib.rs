@@ -1,7 +1,7 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 mod components;
-use components::db::{get_instance, get_last_user, AppState};
-use components::monitor::{compare_images, LiveUser};
+use components::db::{get_instance, get_last_user, get_user_by_id, AppState};
+use components::monitor::{compare_images, hook_msg, LiveUser, Message};
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::Arc;
 use tauri::State;
@@ -12,14 +12,23 @@ async fn add_user(
     url: &str,
     hook: &str,
     state: State<'_, Arc<AppState>>,
-) -> Result<String, ()> {
-    let _ = sqlx::query("INSERT INTO users (name, url, hook) VALUES (?, ?, ?)")
+) -> Result<String, String> {
+    match sqlx::query("INSERT INTO users (name, url, hook) VALUES (?,?,?)")
         .bind(name)
         .bind(url)
         .bind(hook)
         .execute(&state.pool)
-        .await;
-    Ok(format!("已添加商家: {}, 直播地址: {}", name, url))
+        .await
+    {
+        Ok(row) => {
+            state
+                .max_id
+                .store(row.last_insert_rowid() as i32, Ordering::SeqCst);
+
+            Ok(format!("已添加商家: {}, 直播地址: {}", name, url))
+        }
+        Err(e) => Err(format!("add user error: {}", e)),
+    }
 }
 
 #[tauri::command]
@@ -28,7 +37,18 @@ async fn get_all_user(state: State<'_, Arc<AppState>>) -> Result<Vec<LiveUser>, 
         .fetch_all(&state.pool)
         .await
     {
-        Ok(rows) => Ok(rows),
+        Ok(rows) => {
+            match rows.first() {
+                Some(row) => {
+                    state.max_id.store(row.id, Ordering::SeqCst);
+                    // println!("max_id: {}", row.id);
+                }
+                None => {
+                    println!("empty database!");
+                }
+            }
+            Ok(rows)
+        }
         Err(e) => Err(format!("Error fetching users: {}", e)),
     }
 }
@@ -56,9 +76,9 @@ async fn get_next_user(state: State<'_, Arc<AppState>>) -> Result<Option<LiveUse
     if next_id > state.max_id.load(Ordering::SeqCst) {
         next_id = -1;
     }
-    println!("next_id : {}", next_id);
-    println!("max_id: {}", state.max_id.load(Ordering::SeqCst));
-    println!("current_id: {}", state.current_id.load(Ordering::SeqCst));
+    // println!("next_id : {}", next_id);
+    // println!("max_id: {}", state.max_id.load(Ordering::SeqCst));
+    // println!("current_id: {}", state.current_id.load(Ordering::SeqCst));
     let query_str: String = match next_id {
         -1 => String::from("SELECT id, name, url,hook FROM users"),
         _ => format!("SELECT id, name, url,hook FROM users WHERE id={}", next_id),
@@ -84,6 +104,20 @@ async fn analysis(state: State<'_, Arc<AppState>>) -> Result<i32, ()> {
             println!("different images !");
         } else {
             println!("same images!");
+            if let Some(current_user) = get_user_by_id(current_id, &state.pool).await {
+                let msg = Message {
+                    name: current_user.name,
+                    url: current_user.url,
+                };
+                match hook_msg(msg, current_user.hook).await {
+                    Ok(()) => {
+                        println!("send hook msg success");
+                    }
+                    Err(e) => {
+                        eprintln!("send hook msg failed: {}", e);
+                    }
+                }
+            }
         }
     }
     println!("analysis current id: {}", current_id);

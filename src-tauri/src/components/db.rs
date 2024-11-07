@@ -44,3 +44,14 @@ pub async fn get_last_user(pool: &Pool<Sqlite>) -> Option<LiveUser> {
         Err(_e) => None,
     }
 }
+
+pub async fn get_user_by_id(id: i32, pool: &Pool<Sqlite>) -> Option<LiveUser> {
+    let query_str = format!("SELECT id, name, url, hook FROM users WHERE id={}", id);
+    match sqlx::query_as::<_, LiveUser>(&query_str)
+        .fetch_one(pool)
+        .await
+    {
+        Ok(row) => Some(row),
+        Err(_e) => None,
+    }
+}

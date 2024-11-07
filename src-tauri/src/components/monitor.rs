@@ -1,7 +1,14 @@
 use image_compare::Algorithm;
+use reqwest::Client;
 use serde::Serialize;
 use sqlx::FromRow;
 use xcap::{image::DynamicImage, Monitor};
+
+#[derive(Serialize)]
+pub struct Message {
+    pub name: String,
+    pub url: String,
+}
 
 #[derive(Debug, Serialize, FromRow, Clone)]
 pub struct LiveUser {
@@ -24,10 +31,17 @@ pub fn compare_images() -> bool {
         let result =
             image_compare::gray_similarity_structure(&Algorithm::MSSIMSimple, &target, &current)
                 .expect("Images had different dimensions");
+        println!("current score: {}", result.score);
         if result.score < 0.95 {
             return true;
         }
     }
 
     false
+}
+
+pub async fn hook_msg(msg: Message, url: String) -> Result<(), reqwest::Error> {
+    let client = Client::new();
+    let _res = client.post(&url).json(&msg).send().await?;
+    Ok(())
 }

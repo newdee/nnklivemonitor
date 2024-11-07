@@ -104,7 +104,7 @@ async fn analysis(state: State<'_, Arc<AppState>>) -> Result<i32, ()> {
             println!("different images !");
         } else {
             println!("same images!");
-            if let Some(current_user) = get_user_by_id(current_id, &state.pool).await {
+            if let Some(current_user) = get_user_by_id(current_id - 1, &state.pool).await {
                 let msg = Message {
                     name: current_user.name,
                     url: current_user.url,

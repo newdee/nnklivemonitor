@@ -124,24 +124,24 @@ async fn analysis(state: State<'_, Arc<AppState>>) -> Result<i32, ()> {
                             eprintln!("send hook msg failed: {}", e);
                         }
                     }
-                } else {
-                    println!("same images!");
+                }
+            } else {
+                println!("same images!");
 
-                    // send msg every 2 hours
-                    if current_user.updated_at < threshold_time.naive_local() {
-                        let msg = Message {
-                            name: current_user.name,
-                            url: current_user.url,
-                            updated_at: current_user.updated_at,
-                            desp: String::from("直播画面相似度太高，可能异常!"),
-                        };
-                        match hook_msg(msg, current_user.hook).await {
-                            Ok(()) => {
-                                println!("send hook msg success");
-                            }
-                            Err(e) => {
-                                eprintln!("send hook msg failed: {}", e);
-                            }
+                // send msg every 2 hours
+                if current_user.status || current_user.updated_at < threshold_time.naive_local() {
+                    let msg = Message {
+                        name: current_user.name,
+                        url: current_user.url,
+                        updated_at: current_user.updated_at,
+                        desp: String::from("直播画面相似度太高，可能异常!"),
+                    };
+                    match hook_msg(msg, current_user.hook).await {
+                        Ok(()) => {
+                            println!("send hook msg success");
+                        }
+                        Err(e) => {
+                            eprintln!("send hook msg failed: {}", e);
                         }
                     }
                 }

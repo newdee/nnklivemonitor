@@ -9,6 +9,9 @@ interface LiveUser {
   name: string,
   url: string,
   hook: string,
+  status: boolean,
+  created_at: string,
+  updated_at: string,
 }
 function App() {
   const [addUser, setAddUser] = useState("");
@@ -23,6 +26,21 @@ function App() {
   const waitPageTime = 5000;
   //const [waitPageTime, setWaitPageTime] = useState<number>(5000);
 
+  const disableClickEvents = (event: Event) => {
+    event.preventDefault();  // 禁用默认行为
+    event.stopPropagation(); // 阻止事件冒泡
+  };
+  useEffect(() => {
+    // 禁用点击事件
+    document.addEventListener('contextmenu', disableClickEvents);
+
+    // 清理函数，移除事件监听器
+    return () => {
+      document.removeEventListener('contextmenu', disableClickEvents);
+    };
+  }, []);
+
+
   async function addLiveUser() {
     // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
     const newUser: string = await invoke("add_user", { name, url, hook });
@@ -33,6 +51,16 @@ function App() {
   const handleFreshPage = async () => {
     setLiveUser(await invoke("get_all_user", {}));
   }
+
+  handleFreshPage();
+  useEffect(() => {
+    const interval = setInterval(() => {
+      handleFreshPage();
+    }, 10000);
+
+    // 清理定时器，防止内存泄漏
+    return () => clearInterval(interval);
+  }, []);
 
   const getCurrentInfo = async () => {
     setCurrentUser(await invoke("get_next_user", {}));
@@ -118,11 +146,11 @@ function App() {
         <Tag color="volcano">当前监控 </Tag>
         <Tag color="gold">ID: {currentUser?.id} </Tag>
         <Tag color="magenta">商家: {currentUser?.name} </Tag>
-        <Tag color="red">直播地址: {currentUser?.url} </Tag>
+        < a href={currentUser?.url} target="_blank"> <Tag color="red">直播地址: {currentUser?.url} </Tag></a>
       </Flex>
       <FloatButton onClick={handleFreshPage} icon={<ReloadOutlined />} style={{ insetInlineEnd: 24, bottom: 20 }} tooltip={<div>Refresh</div>} />
 
-      <Table dataSource={liveUser} columns={[{ title: "直播商家", dataIndex: "name", key: "name" }, { title: "直播地址", dataIndex: "url", key: "url" }]} pagination={{ position: ["bottomLeft"], showQuickJumper: true, pageSize: 5, }} />
+      <Table dataSource={liveUser} columns={[{ title: "直播商家", dataIndex: "name", key: "name", render: (text) => <Tag color="pink" >{text}</Tag> }, { title: "直播地址", dataIndex: "url", key: "url", render: (text) => <a href={text} target="_blank"><Tag>{text}</Tag></a> }, { title: "更新时间", dataIndex: "updated_at", key: "updated_at", render: (text) => <Tag color="purple">{text}</Tag> }, { title: "直播状态", dataIndex: "status", key: "status", render: (status) => <Tag color={status ? "green" : "red"} > {status ? "正常" : "异常"} </Tag> }]} pagination={{ position: ["bottomLeft"], showQuickJumper: true, pageSize: 5, }} />
 
     </main >
   );

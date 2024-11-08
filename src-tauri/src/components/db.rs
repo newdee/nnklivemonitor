@@ -3,7 +3,6 @@ use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{Error, Pool, Sqlite};
 use std::str::FromStr;
 use std::sync::atomic::AtomicI32;
-use std::sync::Mutex;
 pub struct AppState {
     pub pool: Pool<Sqlite>,
     pub current_id: AtomicI32,
@@ -25,7 +24,10 @@ pub async fn get_instance() -> Result<Pool<Sqlite>, Error> {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             url TEXT NOT NULL,
-            hook TEXT NOT NULL
+            hook TEXT NOT NULL,
+            status INTEGER DEFAULT 1,
+            created_at DATETIME DEFAULT (datetime('now', '+8 hours')),
+            updated_at DATETIME DEFAULT '1970-01-01 00:00:00'
         );
         "#,
     )
@@ -35,7 +37,8 @@ pub async fn get_instance() -> Result<Pool<Sqlite>, Error> {
 }
 
 pub async fn get_last_user(pool: &Pool<Sqlite>) -> Option<LiveUser> {
-    let query_str = "SELECT id, name, url, hook FROM users ORDER BY id DESC";
+    let query_str =
+        "SELECT id, name, url, hook, status, created_at, updated_at FROM users ORDER BY id DESC";
     match sqlx::query_as::<_, LiveUser>(&query_str)
         .fetch_one(pool)
         .await
@@ -46,12 +49,29 @@ pub async fn get_last_user(pool: &Pool<Sqlite>) -> Option<LiveUser> {
 }
 
 pub async fn get_user_by_id(id: i32, pool: &Pool<Sqlite>) -> Option<LiveUser> {
-    let query_str = format!("SELECT id, name, url, hook FROM users WHERE id={}", id);
+    let query_str = format!(
+        "SELECT id, name, url, hook, status, created_at, updated_at FROM users WHERE id={}",
+        id
+    );
     match sqlx::query_as::<_, LiveUser>(&query_str)
         .fetch_one(pool)
         .await
     {
         Ok(row) => Some(row),
         Err(_e) => None,
+    }
+}
+
+pub async fn set_user_state(id: i32, status: bool, pool: &Pool<Sqlite>) -> bool {
+    let query_str = format!(
+        "UPDATE users SET status={}, updated_at = (datetime('now', '+8 hours')) WHERE id = {}",
+        status, id
+    );
+    match sqlx::query(&query_str).execute(pool).await {
+        Ok(_res) => true,
+        Err(e) => {
+            eprintln!("set user state err: {}", e);
+            false
+        }
     }
 }

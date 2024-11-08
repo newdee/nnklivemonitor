@@ -1,6 +1,7 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 mod components;
-use components::db::{get_instance, get_last_user, get_user_by_id, AppState};
+use chrono::{Duration, Local};
+use components::db::{get_instance, get_last_user, get_user_by_id, set_user_state, AppState};
 use components::monitor::{compare_images, hook_msg, LiveUser, Message};
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::Arc;
@@ -33,7 +34,9 @@ async fn add_user(
 
 #[tauri::command]
 async fn get_all_user(state: State<'_, Arc<AppState>>) -> Result<Vec<LiveUser>, String> {
-    match sqlx::query_as::<_, LiveUser>("SELECT id,name,url,hook FROM users ORDER BY id DESC")
+    let query_str =
+        "SELECT id, name, url, hook, status, created_at, updated_at FROM users ORDER BY id DESC";
+    match sqlx::query_as::<_, LiveUser>(query_str)
         .fetch_all(&state.pool)
         .await
     {
@@ -55,15 +58,13 @@ async fn get_all_user(state: State<'_, Arc<AppState>>) -> Result<Vec<LiveUser>, 
 
 #[tauri::command]
 async fn get_current_user(state: State<'_, Arc<AppState>>) -> Result<Option<LiveUser>, String> {
-    match sqlx::query_as::<_, LiveUser>(
-        format!(
-            "SELECT id,name,url,hook FROM users ORDER BY id DESC WHERE id={}",
-            state.current_id.load(Ordering::SeqCst)
-        )
-        .as_str(),
-    )
-    .fetch_one(&state.pool)
-    .await
+    let query_str = format!(
+        "SELECT id,name,url,hook, status,created_at, updated_at FROM users ORDER BY id DESC WHERE id={}",
+        state.current_id.load(Ordering::SeqCst)
+    );
+    match sqlx::query_as::<_, LiveUser>(&query_str)
+        .fetch_one(&state.pool)
+        .await
     {
         Ok(rows) => Ok(Some(rows)),
         Err(e) => Err(format!("Error fetching users: {}", e)),
@@ -80,8 +81,11 @@ async fn get_next_user(state: State<'_, Arc<AppState>>) -> Result<Option<LiveUse
     // println!("max_id: {}", state.max_id.load(Ordering::SeqCst));
     // println!("current_id: {}", state.current_id.load(Ordering::SeqCst));
     let query_str: String = match next_id {
-        -1 => String::from("SELECT id, name, url,hook FROM users"),
-        _ => format!("SELECT id, name, url,hook FROM users WHERE id={}", next_id),
+        -1 => String::from("SELECT id, name, url, hook, status, created_at, updated_at FROM users"),
+        _ => format!(
+            "SELECT id, name, url, hook, status, created_at, updated_at FROM users WHERE id={}",
+            next_id
+        ),
     };
     match sqlx::query_as::<_, LiveUser>(&query_str)
         .fetch_one(&state.pool)
@@ -100,24 +104,49 @@ async fn get_next_user(state: State<'_, Arc<AppState>>) -> Result<Option<LiveUse
 async fn analysis(state: State<'_, Arc<AppState>>) -> Result<i32, ()> {
     let current_id = state.current_id.load(Ordering::SeqCst);
     if current_id != -1 {
-        if compare_images() {
-            println!("different images !");
-        } else {
-            println!("same images!");
-            if let Some(current_user) = get_user_by_id(current_id - 1, &state.pool).await {
-                let msg = Message {
-                    name: current_user.name,
-                    url: current_user.url,
-                };
-                match hook_msg(msg, current_user.hook).await {
-                    Ok(()) => {
-                        println!("send hook msg success");
+        if let Some(current_user) = get_user_by_id(current_id - 1, &state.pool).await {
+            let threshold_time = Local::now() - Duration::hours(2);
+            let is_different = compare_images();
+            if is_different {
+                println!("different images !");
+                if !current_user.status {
+                    let msg = Message {
+                        name: current_user.name,
+                        url: current_user.url,
+                        updated_at: current_user.updated_at,
+                        desp: String::from("直播画面恢复正常!"),
+                    };
+                    match hook_msg(msg, current_user.hook).await {
+                        Ok(()) => {
+                            println!("send hook msg success");
+                        }
+                        Err(e) => {
+                            eprintln!("send hook msg failed: {}", e);
+                        }
                     }
-                    Err(e) => {
-                        eprintln!("send hook msg failed: {}", e);
+                } else {
+                    println!("same images!");
+
+                    // send msg every 2 hours
+                    if current_user.updated_at < threshold_time.naive_local() {
+                        let msg = Message {
+                            name: current_user.name,
+                            url: current_user.url,
+                            updated_at: current_user.updated_at,
+                            desp: String::from("直播画面相似度太高，可能异常!"),
+                        };
+                        match hook_msg(msg, current_user.hook).await {
+                            Ok(()) => {
+                                println!("send hook msg success");
+                            }
+                            Err(e) => {
+                                eprintln!("send hook msg failed: {}", e);
+                            }
+                        }
                     }
                 }
             }
+            set_user_state(current_user.id, is_different, &state.pool).await;
         }
     }
     println!("analysis current id: {}", current_id);
@@ -142,7 +171,14 @@ pub fn run() {
         current_id: AtomicI32::new(-1),
         max_id: AtomicI32::new(max_user_id),
     });
-    tauri::Builder::default()
+
+    #[cfg(debug_assertions)]
+    let builder = tauri::Builder::default().plugin(tauri_plugin_devtools::init());
+
+    #[cfg(not(debug_assertions))]
+    let builder = tauri::Builder::default();
+
+    builder
         .manage(state.clone())
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
@@ -152,5 +188,5 @@ pub fn run() {
             analysis
         ])
         .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .expect("error while running nnklivemonitor application");
 }

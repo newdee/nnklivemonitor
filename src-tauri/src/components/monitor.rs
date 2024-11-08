@@ -1,3 +1,4 @@
+use chrono::NaiveDateTime;
 use image_compare::Algorithm;
 use reqwest::Client;
 use serde::Serialize;
@@ -8,6 +9,8 @@ use xcap::{image::DynamicImage, Monitor};
 pub struct Message {
     pub name: String,
     pub url: String,
+    pub updated_at: NaiveDateTime,
+    pub desp: String,
 }
 
 #[derive(Debug, Serialize, FromRow, Clone)]
@@ -16,6 +19,9 @@ pub struct LiveUser {
     pub name: String,
     pub url: String,
     pub hook: String,
+    pub status: bool,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
 }
 
 pub fn area_shot() -> DynamicImage {

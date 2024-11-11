@@ -57,44 +57,26 @@ async fn get_all_user(state: State<'_, Arc<AppState>>) -> Result<Vec<LiveUser>, 
 }
 
 #[tauri::command]
-async fn get_current_user(state: State<'_, Arc<AppState>>) -> Result<Option<LiveUser>, String> {
-    let query_str = format!(
-        "SELECT id,name,url,hook, status,created_at, updated_at FROM users ORDER BY id DESC WHERE id={}",
-        state.current_id.load(Ordering::SeqCst)
-    );
-    match sqlx::query_as::<_, LiveUser>(&query_str)
-        .fetch_one(&state.pool)
-        .await
-    {
-        Ok(rows) => Ok(Some(rows)),
-        Err(e) => Err(format!("Error fetching users: {}", e)),
-    }
-}
-
-#[tauri::command]
 async fn get_next_user(state: State<'_, Arc<AppState>>) -> Result<Option<LiveUser>, String> {
-    let mut next_id = state.current_id.load(Ordering::SeqCst);
-    if next_id > state.max_id.load(Ordering::SeqCst) {
-        next_id = -1;
-    }
+    let current_id = match state.current_id.load(Ordering::SeqCst) {
+        n if n < state.max_id.load(Ordering::SeqCst) => n,
+        _ => -1
+    };
     // println!("next_id : {}", next_id);
     // println!("max_id: {}", state.max_id.load(Ordering::SeqCst));
     // println!("current_id: {}", state.current_id.load(Ordering::SeqCst));
-    let query_str: String = match next_id {
-        -1 => String::from("SELECT id, name, url, hook, status, created_at, updated_at FROM users"),
-        _ => format!(
-            "SELECT id, name, url, hook, status, created_at, updated_at FROM users WHERE id={}",
-            next_id
-        ),
-    };
+    let query_str: String = format!(
+            "SELECT id, name, url, hook, status, created_at, updated_at FROM users WHERE id>{} ORDER BY id ASC",
+           current_id 
+        );
     match sqlx::query_as::<_, LiveUser>(&query_str)
         .fetch_one(&state.pool)
         .await
     {
-        Ok(rows) => {
-            state.current_id.store(rows.id + 1, Ordering::SeqCst);
+        Ok(row) => {
+            state.current_id.store(row.id, Ordering::SeqCst);
             println!("current_id: {}", state.current_id.load(Ordering::SeqCst));
-            Ok(Some(rows))
+            Ok(Some(row))
         }
         Err(e) => Err(format!("Error fetching users: {}", e)),
     }
@@ -104,7 +86,9 @@ async fn get_next_user(state: State<'_, Arc<AppState>>) -> Result<Option<LiveUse
 async fn analysis(state: State<'_, Arc<AppState>>) -> Result<i32, ()> {
     let current_id = state.current_id.load(Ordering::SeqCst);
     if current_id != -1 {
-        if let Some(current_user) = get_user_by_id(current_id - 1, &state.pool).await {
+        if let Some(current_user) = get_user_by_id(current_id, &state.pool).await {
+            // println!("analysis current id: {}", current_id);
+            // println!("analysis current user: {}", current_user.name.clone());
             let threshold_time = Local::now() - Duration::hours(2);
             let is_different = compare_images();
             if is_different {
@@ -149,7 +133,6 @@ async fn analysis(state: State<'_, Arc<AppState>>) -> Result<i32, ()> {
             set_user_state(current_user.id, is_different, &state.pool).await;
         }
     }
-    println!("analysis current id: {}", current_id);
     Ok(current_id)
 }
 

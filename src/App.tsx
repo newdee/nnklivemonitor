@@ -72,12 +72,13 @@ function App() {
   }, [analysisId]);
 
   const handleOpenNewWindow = (url: string) => {
+    const randomUrl = `${url}?t=${new Date().getTime()}`;
     if (!newWindow || newWindow.closed) {
       const windowFeatures = `width=800, height=800, left=0, top=0 `;
-      const windowObject = window.open(url, "_blank", windowFeatures);
+      const windowObject = window.open(randomUrl, "_blank", windowFeatures);
       setNewWindow(windowObject);  // 保存窗口对象，以便后续操作
     } else {
-      newWindow.location.href = url;
+      newWindow.location.href = randomUrl;
     }
 
 
